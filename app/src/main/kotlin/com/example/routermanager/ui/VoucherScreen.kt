@@ -66,6 +66,19 @@ fun VoucherScreen(
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
+            item {
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF3A2D16)),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Text(
+                        "تنبيه: هذه الكروت تُدار محليًا داخل التطبيق حاليًا، ولا تنشئ حسابات Hotspot أو Captive Portal فعلية على الراوتر.",
+                        color = Color(0xFFFFD27A),
+                        fontSize = 12.sp,
+                        modifier = Modifier.padding(12.dp)
+                    )
+                }
+            }
             if (vouchers.isEmpty()) {
                 item {
                     Box(modifier = Modifier.fillMaxWidth().padding(top = 50.dp), contentAlignment = Alignment.Center) {
