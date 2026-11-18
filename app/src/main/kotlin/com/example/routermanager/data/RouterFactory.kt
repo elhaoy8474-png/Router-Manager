@@ -156,7 +156,7 @@ class RouterFactory(private val context: Context) {
                     val poweredBy = response.header("X-Powered-By").orEmpty()
                     val auth = response.header("WWW-Authenticate").orEmpty()
                     val contentType = response.header("Content-Type").orEmpty()
-                    val body = response.body?.string().orEmpty().take(MAX_FINGERPRINT_CHARS)
+                    val body = readBodyPrefix(response)
                     val title = Regex(
                         "<title[^>]*>(.*?)</title>",
                         setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)
@@ -214,6 +214,19 @@ class RouterFactory(private val context: Context) {
         return Pair(api, identification.confidence)
     }
 
+    /** Read only a bounded prefix; ResponseBody.string() would buffer an unbounded page. */
+    private fun readBodyPrefix(response: okhttp3.Response): String {
+        val source = response.body?.source() ?: return ""
+        val buffer = okio.Buffer()
+        var remaining = MAX_FINGERPRINT_BYTES
+        while (remaining > 0) {
+            val read = source.read(buffer, minOf(8_192L, remaining))
+            if (read == -1L) break
+            remaining -= read
+        }
+        return buffer.readUtf8()
+    }
+
     private fun extractModel(text: String): String? {
         val patterns = listOf(
             Regex("""\bZXHN[\s_-]?[A-Z0-9-]{2,}\b""", RegexOption.IGNORE_CASE),
@@ -235,7 +248,7 @@ class RouterFactory(private val context: Context) {
     }
 
     private companion object {
-        const val MAX_FINGERPRINT_CHARS = 256 * 1024
+        const val MAX_FINGERPRINT_BYTES = 256 * 1024L
         const val MIN_CONFIDENCE = 65
         const val AMBIGUITY_MARGIN = 15
     }
