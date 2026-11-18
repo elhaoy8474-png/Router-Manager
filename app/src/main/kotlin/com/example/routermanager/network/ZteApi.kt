@@ -235,7 +235,7 @@ class ZteApi(
     }
 
     override suspend fun getRouterInfo(): RouterResult<RouterInfo> = io {
-        ok(RouterInfo(vendor = "ZTE", model = "ZXHN H188A", firmware = "Unknown"))
+        ok(RouterInfo(vendor = "ZTE", model = "Unknown", firmware = "Unknown"))
     }
 
     override suspend fun changeSsid(ssid: String, band: String?): RouterResult<Unit> = notSupported("Change SSID")
