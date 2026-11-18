@@ -38,7 +38,10 @@ object BackupManager {
     fun importFromJson(jsonString: String): Pair<AppSettings, Map<String, String>>? {
         return try {
             val root = JSONObject(jsonString)
-            
+            if (!root.has("settings") && !root.has("nicknames")) return null
+            if (root.has("settings") && root.optJSONObject("settings") == null) return null
+            if (root.has("nicknames") && root.optJSONObject("nicknames") == null) return null
+
             val settingsJson = root.optJSONObject("settings")
             val settings = if (settingsJson != null) {
                 AppSettings(
