@@ -57,11 +57,9 @@ class RouterFactory(private val context: Context) {
         VendorFingerprint("ZTE", listOf(
             "zxhn" to 100,
             "zte corporation" to 95,
-            "zxhn" to 100,
             "getpage.gch" to 90,
             "_sessiontmptoken" to 90,
-            "login_token" to 80,
-            "zte corporation" to 95
+            "login_token" to 80
         )),
         VendorFingerprint("Huawei", listOf(
             "echolife" to 100,
@@ -164,8 +162,7 @@ class RouterFactory(private val context: Context) {
                         setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)
                     ).find(body)?.groupValues?.getOrNull(1).orEmpty()
 
-                    // Status and content type are retained as evidence for diagnostics, but a generic
-                    // 404 page or a vendor name in arbitrary text is not a fingerprint.
+                    // A generic 404 page alone is not a fingerprint.
                     val searchable = listOf(server, poweredBy, auth, contentType, title, body)
                         .joinToString(" ")
                         .lowercase(Locale.ROOT)
