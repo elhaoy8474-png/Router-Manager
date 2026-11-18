@@ -34,6 +34,9 @@ class RouterFactory(private val context: Context) {
             .connectTimeout(3, TimeUnit.SECONDS)
             .readTimeout(3, TimeUnit.SECONDS)
             .callTimeout(6, TimeUnit.SECONDS)
+            // Discovery must not follow a router redirect to an unrelated host.
+            .followRedirects(false)
+            .followSslRedirects(false)
             .build()
     }
 
@@ -54,16 +57,17 @@ class RouterFactory(private val context: Context) {
         VendorFingerprint("ZTE", listOf(
             "zxhn" to 100,
             "zte corporation" to 95,
+            "zxhn" to 100,
             "getpage.gch" to 90,
             "_sessiontmptoken" to 90,
             "login_token" to 80,
-            "zte" to 65
+            "zte corporation" to 95
         )),
         VendorFingerprint("Huawei", listOf(
             "echolife" to 100,
             "x_hw_token" to 95,
             "getrandcount.asp" to 90,
-            "huawei" to 85
+            "huawei technologies" to 95
         )),
         VendorFingerprint("TP-Link", listOf(
             "tp-link" to 100,
@@ -79,7 +83,7 @@ class RouterFactory(private val context: Context) {
         VendorFingerprint("ASUS", listOf(
             "asuswrt" to 100,
             "router.asus.com" to 95,
-            "asus" to 85
+            "asuswrt-merlin" to 95
         )),
         VendorFingerprint("Netgear", listOf(
             "netgear" to 100,
@@ -138,13 +142,14 @@ class RouterFactory(private val context: Context) {
      * No username/password is sent during this stage.
      */
     suspend fun identifyRouter(host: String): RouterIdentification? = withContext(Dispatchers.IO) {
-        for (https in listOf(false, true)) {
+        for (https in listOf(true, false)) {
             val url = runCatching { RouterHttpClient.baseUrl(host, https) }.getOrNull() ?: continue
             try {
                 val request = Request.Builder()
                     .url(url)
                     .header("Accept", "text/html,application/xhtml+xml,application/json,*/*")
                     .header("Cache-Control", "no-cache")
+                    .header("Connection", "close")
                     .get()
                     .build()
 
@@ -152,13 +157,16 @@ class RouterFactory(private val context: Context) {
                     val server = response.header("Server").orEmpty()
                     val poweredBy = response.header("X-Powered-By").orEmpty()
                     val auth = response.header("WWW-Authenticate").orEmpty()
+                    val contentType = response.header("Content-Type").orEmpty()
                     val body = response.body?.string().orEmpty().take(MAX_FINGERPRINT_CHARS)
                     val title = Regex(
                         "<title[^>]*>(.*?)</title>",
                         setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)
                     ).find(body)?.groupValues?.getOrNull(1).orEmpty()
 
-                    val searchable = listOf(server, poweredBy, auth, title, body)
+                    // Status and content type are retained as evidence for diagnostics, but a generic
+                    // 404 page or a vendor name in arbitrary text is not a fingerprint.
+                    val searchable = listOf(server, poweredBy, auth, contentType, title, body)
                         .joinToString(" ")
                         .lowercase(Locale.ROOT)
 
