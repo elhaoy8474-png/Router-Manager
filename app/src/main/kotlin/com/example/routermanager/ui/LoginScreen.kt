@@ -183,6 +183,15 @@ fun LoginScreen(
 
             Spacer(modifier = Modifier.height(8.dp))
 
+            Text(
+                text = "تنبيه أمني: بعض أجهزة الراوتر لا تدعم إلا HTTP؛ في هذه الحالة قد تنتقل بيانات الدخول دون تشفير داخل الشبكة. استخدم شبكة موثوقة فقط.",
+                color = Color(0xFFFFC857),
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.padding(horizontal = 8.dp)
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
