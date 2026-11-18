@@ -26,13 +26,13 @@ import org.json.JSONObject
 data class SpeedTestState(
     val isTesting: Boolean = false,
     val statusText: String = "جاهز للاختبار",
-    val currentSpeed: Double = 0.0,
+    val currentSpeed: Double = -1.0,
     val progress: Float = 0f,
-    val ping: Long = 0L,
-    val jitter: Long = 0L,
-    val packetLoss: Double = 0.0,
-    val download: Double = 0.0,
-    val upload: Double = 0.0
+    val ping: Long = -1L,
+    val jitter: Long = -1L,
+    val packetLoss: Double = -1.0,
+    val download: Double = -1.0,
+    val upload: Double = -1.0
 )
 
 data class TrafficSample(val download: Float, val upload: Float)
@@ -397,7 +397,16 @@ class RouterViewModel(application: Application) : AndroidViewModel(application) 
             val upJob = launch { while (isActive) { val p = _speedTest.value.progress; if (p < 0.95f) _speedTest.update { it.copy(progress = p + 0.01f) }; delay(100) } }
             val uploadSpeed = SpeedTestManager.measureUploadLive { speed -> _speedTest.update { it.copy(currentSpeed = speed, upload = speed) } }
             upJob.cancel()
-            _speedTest.update { it.copy(isTesting = false, statusText = "اكتمل الاختبار", progress = 1f, currentSpeed = downloadSpeed) }
+            _speedTest.update {
+                it.copy(
+                    isTesting = false,
+                    statusText = "اكتمل الاختبار",
+                    progress = 1f,
+                    currentSpeed = downloadSpeed,
+                    download = downloadSpeed,
+                    upload = uploadSpeed
+                )
+            }
         }
     }
 }
