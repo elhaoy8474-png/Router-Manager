@@ -341,7 +341,37 @@ class RouterViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun getBackupData(): String = BackupManager.exportToJson(_settings.value, _deviceNicknames.value)
-    fun restoreFromData(jsonString: String): Boolean = false
+
+    fun restoreFromData(jsonString: String): Boolean {
+        val imported = BackupManager.importFromJson(jsonString) ?: return false
+        val importedSettings = imported.first.copy(
+            theme = imported.first.theme.takeIf { it in setOf("system", "light", "dark") } ?: "system",
+            language = imported.first.language.takeIf { it in setOf("ar", "en") } ?: "ar",
+            autoRefreshInterval = imported.first.autoRefreshInterval.coerceIn(5, 3600)
+        )
+        val validMac = Regex("(?i)^[0-9a-f]{2}(:[0-9a-f]{2}){5}$")
+        val safeNicknames = imported.second.mapNotNull { (mac, name) ->
+            val cleanMac = mac.trim().uppercase()
+            val cleanName = name.trim()
+            if (validMac.matches(cleanMac) && cleanName.isNotEmpty() && cleanName.length <= 32) {
+                cleanMac to cleanName
+            } else {
+                null
+            }
+        }.toMap()
+
+        _settings.value = importedSettings
+        _deviceNicknames.value = safeNicknames
+        isAutoRefreshEnabled = importedSettings.autoRefresh
+        prefs.edit()
+            .putString("theme", importedSettings.theme)
+            .putString("language", importedSettings.language)
+            .putBoolean("auto_refresh", importedSettings.autoRefresh)
+            .putInt("auto_refresh_interval", importedSettings.autoRefreshInterval)
+            .apply()
+        startAutoRefresh()
+        return true
+    }
 
     fun startSpeedTest() {
         if (_speedTest.value.isTesting) return
