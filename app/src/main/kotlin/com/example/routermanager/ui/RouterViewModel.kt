@@ -126,7 +126,16 @@ class RouterViewModel(application: Application) : AndroidViewModel(application) 
             _login.update { it.copy(host = saved.host, username = saved.username, password = saved.password, rememberMe = true) }
         }
         _login.update { it.copy(preferredBrand = prefs.getString("brand", "Auto") ?: "Auto", supportedBrands = factory.supportedBrands) }
-        
+        _settings.update {
+            it.copy(
+                theme = prefs.getString("theme", "system") ?: "system",
+                language = prefs.getString("language", "ar") ?: "ar",
+                autoRefresh = prefs.getBoolean("auto_refresh", true),
+                autoRefreshInterval = prefs.getInt("auto_refresh_interval", 30).coerceIn(5, 3600)
+            )
+        }
+        isAutoRefreshEnabled = _settings.value.autoRefresh
+
         loadVouchers()
         startTrafficMonitoring()
         startVoucherChecker()
@@ -320,7 +329,7 @@ class RouterViewModel(application: Application) : AndroidViewModel(application) 
         viewModelScope.launch { current.reboot() }
     }
 
-    fun toggleTheme(theme: String) { _settings.update { it.copy(theme = theme) } }
+    fun toggleTheme(theme: String) {\n        val safeTheme = theme.takeIf { it in setOf("system", "light", "dark") } ?: "system"\n        _settings.update { it.copy(theme = safeTheme) }\n        prefs.edit().putString("theme", safeTheme).apply()\n    }
     fun dismissMessage() { _dashboard.update { it.copy(message = null) } }
 
     private fun startAutoRefresh() {
