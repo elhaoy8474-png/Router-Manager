@@ -42,6 +42,7 @@ data class LoginState(
     val username: String = "admin",
     val password: String = "",
     val rememberMe: Boolean = true,
+    val allowInsecureHttp: Boolean = false,
     val preferredBrand: String = "Auto",
     val loading: Boolean = false,
     val error: String? = null,
@@ -235,12 +236,20 @@ class RouterViewModel(application: Application) : AndroidViewModel(application) 
     fun onUserChange(v: String) = _login.update { it.copy(username = v, error = null) }
     fun onPassChange(v: String) = _login.update { it.copy(password = v, error = null) }
     fun onRememberChange(v: Boolean) = _login.update { it.copy(rememberMe = v) }
+    fun onAllowInsecureHttpChange(v: Boolean) = _login.update { it.copy(allowInsecureHttp = v, error = null) }
     fun onBrandChange(v: String) = _login.update { it.copy(preferredBrand = v, error = null) }
 
     fun connect() {
         val s = _login.value
         if (s.host.isBlank() || s.password.isEmpty()) {
             _login.update { it.copy(error = "Enter IP and password.") }
+            return
+        }
+        val explicitHttps = s.host.trim().startsWith("https://", ignoreCase = true)
+        if (!explicitHttps && !s.allowInsecureHttp) {
+            _login.update {
+                it.copy(error = "فعّل موافقة HTTP بعد قراءة التنبيه؛ الاتصال غير مشفّر وقد يكشف كلمة المرور على الشبكة.")
+            }
             return
         }
         _login.update { it.copy(loading = true, error = null) }
