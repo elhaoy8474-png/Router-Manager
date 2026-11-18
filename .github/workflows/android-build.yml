@@ -4,13 +4,16 @@ on:
   push:
     branches:
       - main
-      - feature/universal-router-discovery
   pull_request:
     branches:
       - main
 
 permissions:
   contents: read
+
+concurrency:
+  group: android-build-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   debug-build:
