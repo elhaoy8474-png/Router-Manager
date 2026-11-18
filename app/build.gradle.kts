@@ -65,4 +65,5 @@ dependencies {
     implementation("androidx.webkit:webkit:1.13.0")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.8.1")
     implementation("androidx.databinding:viewbinding:8.7.3")
+    testImplementation("junit:junit:4.13.2")
 }

@@ -6,7 +6,6 @@ import com.example.routermanager.network.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.Request
-import java.util.Locale
 import java.util.concurrent.TimeUnit
 
 /**
@@ -46,52 +45,6 @@ class RouterFactory(private val context: Context) {
         val firmware: String?,
         val confidence: Int,
         val evidence: List<String>
-    )
-
-    private data class VendorFingerprint(
-        val vendor: String,
-        val signatures: List<Pair<String, Int>>
-    )
-
-    private val fingerprints = listOf(
-        VendorFingerprint("ZTE", listOf(
-            "zxhn" to 100,
-            "zte corporation" to 95,
-            "getpage.gch" to 90,
-            "_sessiontmptoken" to 90,
-        )),
-        VendorFingerprint("Huawei", listOf(
-            "echolife" to 100,
-            "x_hw_token" to 95,
-            "getrandcount.asp" to 90,
-            "huawei technologies" to 95
-        )),
-        VendorFingerprint("TP-Link", listOf(
-            "tp-link" to 100,
-            "tplink" to 95,
-            "tplogin" to 90,
-            "/webpages/" to 55
-        )),
-        VendorFingerprint("D-Link", listOf(
-            "d-link" to 100,
-            "dlink" to 90,
-            "hnap1" to 80
-        )),
-        VendorFingerprint("ASUS", listOf(
-            "asuswrt" to 100,
-            "router.asus.com" to 95,
-            "asuswrt-merlin" to 95
-        )),
-        VendorFingerprint("Netgear", listOf(
-            "netgear" to 100,
-            "unauth.cgi" to 85,
-            "genie" to 55
-        )),
-        VendorFingerprint("Xiaomi", listOf(
-            "miwifi" to 100,
-            "xqsystem" to 90,
-            "xiaomi" to 85
-        ))
     )
 
     suspend fun connect(
@@ -168,35 +121,17 @@ class RouterFactory(private val context: Context) {
                         .joinToString(" ")
                         .lowercase(Locale.ROOT)
 
-                    val ranked = fingerprints.map { fingerprint ->
-                        val matches = fingerprint.signatures.filter { (needle, _) ->
-                            searchable.contains(needle)
-                        }
-                        Triple(
-                            fingerprint,
-                            matches.sumOf { it.second },
-                            matches.map { it.first }
-                        )
-                    }.sortedByDescending { it.second }
-
-                    val winner = ranked.firstOrNull()
-                    val runnerUp = ranked.getOrNull(1)?.second ?: 0
-
-                    // A weak or ambiguous match must not cause an authentication attempt.
-                    if (winner != null &&
-                        winner.second >= MIN_CONFIDENCE &&
-                        !(runnerUp >= MIN_CONFIDENCE && winner.second - runnerUp < AMBIGUITY_MARGIN)
-                    ) {
+                    val match = RouterFingerprintMatcher.match(searchable)
+                    if (match != null) {
                         val model = extractModel(searchable)
                         val firmware = extractFirmware(searchable)
-                        val confidence = winner.second.coerceAtMost(100)
 
                         return@withContext RouterIdentification(
-                            vendor = winner.first.vendor,
+                            vendor = match.vendor,
                             model = model,
                             firmware = firmware,
-                            confidence = confidence,
-                            evidence = winner.third
+                            confidence = match.confidence,
+                            evidence = match.evidence
                         )
                     }
                 }
@@ -250,7 +185,5 @@ class RouterFactory(private val context: Context) {
 
     private companion object {
         const val MAX_FINGERPRINT_BYTES = 256 * 1024L
-        const val MIN_CONFIDENCE = 65
-        const val AMBIGUITY_MARGIN = 15
     }
 }
