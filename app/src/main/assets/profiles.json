@@ -1,0 +1,20 @@
+{
+  "ZTE_H108N": {
+    "login_path": "/getpage.gch?pid=1002",
+    "devices_path": "/getpage.gch?pid=1002&nextpage=sta_wlan",
+    "ssid_path": "/wifi.gch",
+    "ssid_field": "WLAN_SSID",
+    "password_path": "/wifi.gch",
+    "password_field": "WPA_PSK",
+    "reboot_path": "/reboot.gch"
+  },
+  "HUAWEI_HG8245": {
+    "login_path": "/cgi-bin/index.cgi",
+    "devices_path": "/html/network/device.html",
+    "ssid_path": "/html/wlan/wlan.html",
+    "ssid_field": "WLAN_SSID",
+    "password_path": "/html/wlan/wlan.html",
+    "password_field": "WLAN_WPA_PSK",
+    "reboot_path": "/html/management/device.html"
+  }
+}
