@@ -329,7 +329,11 @@ class RouterViewModel(application: Application) : AndroidViewModel(application) 
         viewModelScope.launch { current.reboot() }
     }
 
-    fun toggleTheme(theme: String) {\n        val safeTheme = theme.takeIf { it in setOf("system", "light", "dark") } ?: "system"\n        _settings.update { it.copy(theme = safeTheme) }\n        prefs.edit().putString("theme", safeTheme).apply()\n    }
+    fun toggleTheme(theme: String) {
+        val safeTheme = theme.takeIf { it in setOf("system", "light", "dark") } ?: "system"
+        _settings.update { it.copy(theme = safeTheme) }
+        prefs.edit().putString("theme", safeTheme).apply()
+    }
     fun dismissMessage() { _dashboard.update { it.copy(message = null) } }
 
     private fun startAutoRefresh() {
