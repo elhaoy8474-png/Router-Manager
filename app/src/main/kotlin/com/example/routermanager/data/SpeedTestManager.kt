@@ -16,7 +16,7 @@ object SpeedTestManager {
         .writeTimeout(20, TimeUnit.SECONDS)
         .build()
 
-    /** يقيس البينج الحقيقي ويرجع (البينج، التذبذب Jitter) */
+    /** Measures HTTPS response latency against Cloudflare; this is not ICMP ping. */
     suspend fun measurePing(): Pair<Long, Long> = withContext(Dispatchers.IO) {
         try {
             val times = mutableListOf<Long>()

@@ -6,7 +6,15 @@ import com.example.routermanager.network.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.Request
+import java.util.Locale
+import java.util.concurrent.TimeUnit
 
+/**
+ * Chooses one router adapter only after identifying the management UI.
+ *
+ * Auto mode is identification-first. An unknown fingerprint is reported as unknown
+ * instead of being treated as a reason to send credentials to every vendor adapter.
+ */
 class RouterFactory(private val context: Context) {
 
     private val apis: List<RouterApi> = listOf(
@@ -21,66 +29,162 @@ class RouterFactory(private val context: Context) {
 
     val supportedBrands: List<String> = listOf("Auto") + apis.map { it.brand }
 
-    suspend fun connect(credentials: RouterCredentials, preferredBrand: String): RouterResult<Pair<RouterApi, RouterSession>> {
-        val candidates: List<RouterApi> = if (preferredBrand == "Auto") {
-            // نتعرف على الماركة من صفحة الراوتر نفسها بدل ما نبعت الباسورد لكل الماركات
-            val hint = detectBrandHint(credentials.host)
-            val matched = if (hint == null) emptyList() else apis.filter { it.brand.contains(hint, ignoreCase = true) }
-            if (matched.isNotEmpty()) matched else apis
+    private val probeClient by lazy {
+        RouterHttpClient.client.newBuilder()
+            .connectTimeout(3, TimeUnit.SECONDS)
+            .readTimeout(3, TimeUnit.SECONDS)
+            .callTimeout(6, TimeUnit.SECONDS)
+            // Discovery must not follow a router redirect to an unrelated host.
+            .followRedirects(false)
+            .followSslRedirects(false)
+            .build()
+    }
+
+    data class RouterIdentification(
+        val vendor: String,
+        val model: String?,
+        val firmware: String?,
+        val confidence: Int,
+        val evidence: List<String>
+    )
+
+    suspend fun connect(
+        credentials: RouterCredentials,
+        preferredBrand: String
+    ): RouterResult<Pair<RouterApi, RouterSession>> {
+        val api: RouterApi
+        val identification: RouterIdentification?
+
+        if (preferredBrand.equals("Auto", ignoreCase = true)) {
+            identification = identifyRouter(credentials.host)
+                ?: return RouterResult.Error(
+                    "لم أستطع تحديد نوع واجهة الراوتر تلقائيًا. لم أرسل كلمة المرور لأي شركة. " +
+                        "جرّب فتح صفحة إدارة الراوتر من الهاتف، أو اختر الشركة يدويًا مؤقتًا."
+                )
+
+            api = apis.firstOrNull {
+                it.brand.contains(identification.vendor, ignoreCase = true)
+            } ?: return RouterResult.Error(
+                "تم التعرف على " + identification.vendor +
+                    (identification.model?.let { " $it" } ?: "") +
+                    "، لكن لا يوجد محول اتصال جاهز لهذا الطراز حتى الآن."
+            )
         } else {
-            // ماركة محددة: نجرب هي بس ونعرض خطأها الحقيقي
-            apis.filter { it.brand == preferredBrand }.ifEmpty { apis }
+            api = apis.firstOrNull { it.brand == preferredBrand }
+                ?: return RouterResult.Error("لا يوجد محول اتصال مسجل للشركة المختارة: " + preferredBrand)
+            identification = null
         }
 
-        val errors = mutableListOf<Pair<String, RouterResult.Error>>()
-
-        for (api in candidates) {
-            val result = api.login(credentials)
-            if (result is RouterResult.Ok) {
-                return RouterResult.Ok(Pair(api, result.value))
-            } else if (result is RouterResult.Error) {
-                errors.add(api.brand to result)
+        return when (val result = api.login(credentials)) {
+            is RouterResult.Ok -> RouterResult.Ok(Pair(api, result.value))
+            is RouterResult.Error -> {
+                val detected = identification?.let {
+                    "تم التعرف على " + it.vendor +
+                        (it.model?.let { model -> " $model" } ?: "") +
+                        " بدرجة ثقة " + it.confidence + "%، "
+                }.orEmpty()
+                RouterResult.Error(detected + "لكن تسجيل الدخول عبر محول " + api.brand + " فشل: " + result.message, result.cause)
             }
         }
-
-        if (errors.isEmpty()) return RouterResult.Error("No supported router found.")
-        if (errors.size == 1) return errors.first().second
-
-        // Auto بدون تعرّف: نعرض أخطاء كل الماركات عشان نعرف أي واحدة وصلت للراوتر فعلاً
-        val summary = errors.joinToString("\n") { "${it.first}: ${it.second.message}" }
-        return RouterResult.Error(summary)
     }
 
     /**
-     * يفتح صفحة الراوتر (HTTPS ثم HTTP) ويدوّر على علامات الماركة في الـ Server header أو الصفحة.
-     * بيرجع null لو مش متأكد، وساعتها نرجع لتجربة كل الماركات.
+     * Read-only identification: GET the router landing page over the two usual schemes.
+     * No username/password is sent during this stage.
      */
-    private suspend fun detectBrandHint(host: String): String? = withContext(Dispatchers.IO) {
+    suspend fun identifyRouter(host: String): RouterIdentification? = withContext(Dispatchers.IO) {
         for (https in listOf(true, false)) {
+            val url = runCatching { RouterHttpClient.baseUrl(host, https) }.getOrNull() ?: continue
             try {
-                val url = RouterHttpClient.baseUrl(host, https)
-                val request = Request.Builder().url(url).get().build()
-                RouterHttpClient.client.newCall(request).execute().use { response ->
+                val request = Request.Builder()
+                    .url(url)
+                    .header("Accept", "text/html,application/xhtml+xml,application/json,*/*")
+                    .header("Cache-Control", "no-cache")
+                    .header("Connection", "close")
+                    .get()
+                    .build()
+
+                probeClient.newCall(request).execute().use { response ->
+                    // Do not identify a vendor from a generic 3xx/404/error template.
+                    if (response.code !in setOf(200, 401, 403)) return@use
                     val server = response.header("Server").orEmpty()
-                    val body = response.body?.string().orEmpty()
-                    if (server.contains("ZTE", ignoreCase = true) ||
-                        body.contains("ZXHN", ignoreCase = true) ||
-                        body.contains("ZTE Corporation", ignoreCase = true)
-                    ) {
-                        return@withContext "ZTE"
+                    val poweredBy = response.header("X-Powered-By").orEmpty()
+                    val auth = response.header("WWW-Authenticate").orEmpty()
+                    val contentType = response.header("Content-Type").orEmpty()
+                    val body = readBodyPrefix(response)
+                    val title = Regex(
+                        "<title[^>]*>(.*?)</title>",
+                        setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)
+                    ).find(body)?.groupValues?.getOrNull(1).orEmpty()
+
+                    // A generic 404 page alone is not a fingerprint.
+                    val searchable = listOf(server, poweredBy, auth, contentType, title, body)
+                        .joinToString(" ")
+                        .lowercase(Locale.ROOT)
+
+                    val match = RouterFingerprintMatcher.match(searchable)
+                    if (match != null) {
+                        val model = extractModel(searchable)
+                        val firmware = extractFirmware(searchable)
+
+                        return@withContext RouterIdentification(
+                            vendor = match.vendor,
+                            model = model,
+                            firmware = firmware,
+                            confidence = match.confidence,
+                            evidence = match.evidence
+                        )
                     }
                 }
-                return@withContext null
-            } catch (e: Exception) {
-                // الاتصال فشل على الـ scheme ده، نجرب التاني
+            } catch (_: Exception) {
+                // Try the alternate scheme; never include credentials in discovery requests.
             }
         }
         null
     }
 
     suspend fun detectWithScore(host: String): Pair<RouterApi, Int>? {
-        val hint = detectBrandHint(host) ?: return null
-        val api = apis.firstOrNull { it.brand.contains(hint, ignoreCase = true) } ?: return null
-        return Pair(api, 100)
+        val identification = identifyRouter(host) ?: return null
+        val api = apis.firstOrNull {
+            it.brand.contains(identification.vendor, ignoreCase = true)
+        } ?: return null
+        return Pair(api, identification.confidence)
+    }
+
+    /** Read only a bounded prefix; ResponseBody.string() would buffer an unbounded page. */
+    private fun readBodyPrefix(response: okhttp3.Response): String {
+        val source = response.body?.source() ?: return ""
+        val buffer = okio.Buffer()
+        var remaining = MAX_FINGERPRINT_BYTES
+        while (remaining > 0) {
+            val read = source.read(buffer, minOf(8_192L, remaining))
+            if (read == -1L) break
+            remaining -= read
+        }
+        return buffer.readUtf8()
+    }
+
+    private fun extractModel(text: String): String? {
+        val patterns = listOf(
+            Regex("""\bZXHN[\s_-]?[A-Z0-9-]{2,}\b""", RegexOption.IGNORE_CASE),
+            Regex("""\bHG\d{4,5}[A-Z0-9-]*\b""", RegexOption.IGNORE_CASE),
+            Regex("""\bArcher\s+[A-Z0-9-]+\b""", RegexOption.IGNORE_CASE),
+            Regex("""\bDIR-\d{3,4}[A-Z0-9-]*\b""", RegexOption.IGNORE_CASE),
+            Regex("""\bRT-[A-Z0-9-]{3,}\b""", RegexOption.IGNORE_CASE),
+            Regex("""\bH188[A-Z0-9-]*\b""", RegexOption.IGNORE_CASE)
+        )
+        return patterns.firstNotNullOfOrNull { it.find(text)?.value }
+    }
+
+    private fun extractFirmware(text: String): String? {
+        val pattern = Regex(
+            """(?:firmware|software|fwversion|firmwareversion|version)\s*["'=:\s>]+\s*([a-z0-9][a-z0-9._-]{2,31})""",
+            RegexOption.IGNORE_CASE
+        )
+        return pattern.find(text)?.groupValues?.getOrNull(1)
+    }
+
+    private companion object {
+        const val MAX_FINGERPRINT_BYTES = 256 * 1024L
     }
 }

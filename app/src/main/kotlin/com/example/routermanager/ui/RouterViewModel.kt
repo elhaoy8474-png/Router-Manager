@@ -26,13 +26,13 @@ import org.json.JSONObject
 data class SpeedTestState(
     val isTesting: Boolean = false,
     val statusText: String = "جاهز للاختبار",
-    val currentSpeed: Double = 0.0,
+    val currentSpeed: Double = -1.0,
     val progress: Float = 0f,
-    val ping: Long = 0L,
-    val jitter: Long = 0L,
-    val packetLoss: Double = 0.0,
-    val download: Double = 0.0,
-    val upload: Double = 0.0
+    val ping: Long = -1L,
+    val jitter: Long = -1L,
+    val packetLoss: Double = -1.0,
+    val download: Double = -1.0,
+    val upload: Double = -1.0
 )
 
 data class TrafficSample(val download: Float, val upload: Float)
@@ -42,6 +42,7 @@ data class LoginState(
     val username: String = "admin",
     val password: String = "",
     val rememberMe: Boolean = true,
+    val allowInsecureHttp: Boolean = false,
     val preferredBrand: String = "Auto",
     val loading: Boolean = false,
     val error: String? = null,
@@ -125,7 +126,16 @@ class RouterViewModel(application: Application) : AndroidViewModel(application) 
             _login.update { it.copy(host = saved.host, username = saved.username, password = saved.password, rememberMe = true) }
         }
         _login.update { it.copy(preferredBrand = prefs.getString("brand", "Auto") ?: "Auto", supportedBrands = factory.supportedBrands) }
-        
+        _settings.update {
+            it.copy(
+                theme = prefs.getString("theme", "system") ?: "system",
+                language = prefs.getString("language", "ar") ?: "ar",
+                autoRefresh = prefs.getBoolean("auto_refresh", true),
+                autoRefreshInterval = prefs.getInt("auto_refresh_interval", 30).coerceIn(5, 3600)
+            )
+        }
+        isAutoRefreshEnabled = _settings.value.autoRefresh
+
         loadVouchers()
         startTrafficMonitoring()
         startVoucherChecker()
@@ -235,12 +245,20 @@ class RouterViewModel(application: Application) : AndroidViewModel(application) 
     fun onUserChange(v: String) = _login.update { it.copy(username = v, error = null) }
     fun onPassChange(v: String) = _login.update { it.copy(password = v, error = null) }
     fun onRememberChange(v: Boolean) = _login.update { it.copy(rememberMe = v) }
+    fun onAllowInsecureHttpChange(v: Boolean) = _login.update { it.copy(allowInsecureHttp = v, error = null) }
     fun onBrandChange(v: String) = _login.update { it.copy(preferredBrand = v, error = null) }
 
     fun connect() {
         val s = _login.value
         if (s.host.isBlank() || s.password.isEmpty()) {
             _login.update { it.copy(error = "Enter IP and password.") }
+            return
+        }
+        val explicitHttps = s.host.trim().startsWith("https://", ignoreCase = true)
+        if (!explicitHttps && !s.allowInsecureHttp) {
+            _login.update {
+                it.copy(error = "فعّل موافقة HTTP بعد قراءة التنبيه؛ الاتصال غير مشفّر وقد يكشف كلمة المرور على الشبكة.")
+            }
             return
         }
         _login.update { it.copy(loading = true, error = null) }
@@ -311,7 +329,11 @@ class RouterViewModel(application: Application) : AndroidViewModel(application) 
         viewModelScope.launch { current.reboot() }
     }
 
-    fun toggleTheme(theme: String) { _settings.update { it.copy(theme = theme) } }
+    fun toggleTheme(theme: String) {
+        val safeTheme = theme.takeIf { it in setOf("system", "light", "dark") } ?: "system"
+        _settings.update { it.copy(theme = safeTheme) }
+        prefs.edit().putString("theme", safeTheme).apply()
+    }
     fun dismissMessage() { _dashboard.update { it.copy(message = null) } }
 
     private fun startAutoRefresh() {
@@ -332,7 +354,37 @@ class RouterViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun getBackupData(): String = BackupManager.exportToJson(_settings.value, _deviceNicknames.value)
-    fun restoreFromData(jsonString: String): Boolean = false
+
+    fun restoreFromData(jsonString: String): Boolean {
+        val imported = BackupManager.importFromJson(jsonString) ?: return false
+        val importedSettings = imported.first.copy(
+            theme = imported.first.theme.takeIf { it in setOf("system", "light", "dark") } ?: "system",
+            language = imported.first.language.takeIf { it in setOf("ar", "en") } ?: "ar",
+            autoRefreshInterval = imported.first.autoRefreshInterval.coerceIn(5, 3600)
+        )
+        val validMac = Regex("(?i)^[0-9a-f]{2}(:[0-9a-f]{2}){5}$")
+        val safeNicknames = imported.second.mapNotNull { (mac, name) ->
+            val cleanMac = mac.trim().uppercase()
+            val cleanName = name.trim()
+            if (validMac.matches(cleanMac) && cleanName.isNotEmpty() && cleanName.length <= 32) {
+                cleanMac to cleanName
+            } else {
+                null
+            }
+        }.toMap()
+
+        _settings.value = importedSettings
+        _deviceNicknames.value = safeNicknames
+        isAutoRefreshEnabled = importedSettings.autoRefresh
+        prefs.edit()
+            .putString("theme", importedSettings.theme)
+            .putString("language", importedSettings.language)
+            .putBoolean("auto_refresh", importedSettings.autoRefresh)
+            .putInt("auto_refresh_interval", importedSettings.autoRefreshInterval)
+            .apply()
+        startAutoRefresh()
+        return true
+    }
 
     fun startSpeedTest() {
         if (_speedTest.value.isTesting) return
@@ -349,7 +401,16 @@ class RouterViewModel(application: Application) : AndroidViewModel(application) 
             val upJob = launch { while (isActive) { val p = _speedTest.value.progress; if (p < 0.95f) _speedTest.update { it.copy(progress = p + 0.01f) }; delay(100) } }
             val uploadSpeed = SpeedTestManager.measureUploadLive { speed -> _speedTest.update { it.copy(currentSpeed = speed, upload = speed) } }
             upJob.cancel()
-            _speedTest.update { it.copy(isTesting = false, statusText = "اكتمل الاختبار", progress = 1f, currentSpeed = downloadSpeed) }
+            _speedTest.update {
+                it.copy(
+                    isTesting = false,
+                    statusText = "اكتمل الاختبار",
+                    progress = 1f,
+                    currentSpeed = downloadSpeed,
+                    download = downloadSpeed,
+                    upload = uploadSpeed
+                )
+            }
         }
     }
 }

@@ -7,13 +7,7 @@ import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
-import java.security.SecureRandom
-import java.security.cert.X509Certificate
 import java.util.concurrent.TimeUnit
-import javax.net.ssl.HostnameVerifier
-import javax.net.ssl.SSLContext
-import javax.net.ssl.TrustManager
-import javax.net.ssl.X509TrustManager
 
 /** Desktop User-Agent so routers that reject mobile browsers serve their normal pages. */
 const val DESKTOP_USER_AGENT =
@@ -46,30 +40,20 @@ class MemoryCookieJar : CookieJar {
 }
 
 /**
- * Builds the OkHttp client used for router traffic.
- * Self-signed certificates are accepted on purpose: home routers rarely have trusted certs,
- * and the LAN address is the only target this client talks to.
+ * Uses the platform's normal TLS certificate-chain and hostname verification.
+ *
+ * Routers with self-signed certificates will fail HTTPS verification. The caller may
+ * fall back to the router's local HTTP interface, which is not encrypted; the login UI
+ * must make this limitation clear to the user. Never silently trust every certificate.
  */
 object RouterHttpClient {
     val cookieJar = MemoryCookieJar()
-
-    private val trustAll = object : X509TrustManager {
-        override fun checkClientTrusted(chain: Array<out X509Certificate>?, authType: String?) {}
-        override fun checkServerTrusted(chain: Array<out X509Certificate>?, authType: String?) {}
-        override fun getAcceptedIssuers(): Array<X509Certificate> = emptyArray()
-    }
-
-    private val sslContext: SSLContext = SSLContext.getInstance("TLS").apply {
-        init(null, arrayOf<TrustManager>(trustAll), SecureRandom())
-    }
 
     val client: OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(10, TimeUnit.SECONDS)
         .readTimeout(15, TimeUnit.SECONDS)
         .followRedirects(true)
         .cookieJar(cookieJar)
-        .sslSocketFactory(sslContext.socketFactory, trustAll)
-        .hostnameVerifier(HostnameVerifier { _, _ -> true })
         .addInterceptor { chain: okhttp3.Interceptor.Chain ->
             val req: Request = chain.request().newBuilder()
                 .header("User-Agent", DESKTOP_USER_AGENT)

@@ -48,8 +48,14 @@ class ZteApi(
 
     override suspend fun login(credentials: RouterCredentials): RouterResult<RouterSession> = io {
         val unreachable = mutableListOf<String>()
-        // الراوتر ده بيفتح HTTPS (بورت 443) بشهادة self-signed، والعميل بيقبلها. HTTP احتياطي.
-        for (https in listOf(true, false)) {
+        val suppliedHost = credentials.host.trim()
+        val schemes = when {
+            suppliedHost.startsWith("https://", ignoreCase = true) -> listOf(true)
+            suppliedHost.startsWith("http://", ignoreCase = true) -> listOf(false)
+            else -> listOf(true, false)
+        }
+        // An explicitly supplied scheme is respected; a bare LAN host tries HTTPS first.
+        for (https in schemes) {
             val root = RouterHttpClient.baseUrl(credentials.host, https = https)
             base = root
             when (val step = attempt(credentials, root)) {
@@ -192,25 +198,37 @@ class ZteApi(
             "/api/device/list"
         )
 
-        var body = ""
-        var found = false
+        val failures = mutableListOf<String>()
+        val macRegex = Regex("\\b(?:[0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}\\b")
+
         for (path in paths) {
-            val r = get(path)
-            if (r is RouterResult.Ok) {
-                body = r.value
-                found = true
-                break
+            when (val result = get(path)) {
+                is RouterResult.Error -> failures += path + ": " + result.message
+                is RouterResult.Ok -> {
+                    val devices = macRegex.findAll(result.value)
+                        .mapNotNull { match ->
+                            val normalized = normalizeMac(match.value) ?: return@mapNotNull null
+                            ConnectedDevice(
+                                name = "ZTE device",
+                                ip = "Unknown",
+                                mac = formatMac(normalized),
+                                online = true
+                            )
+                        }
+                        .distinctBy { it.mac }
+                        .toList()
+
+                    // A 200 login page or generic HTML page is not a device-list response.
+                    if (devices.isNotEmpty()) return@io ok(devices)
+                    failures += path + ": HTTP 200 but no valid MAC addresses were present"
+                }
             }
         }
 
-        if (!found) return@io fail("Device list not found (404).")
-
-        val list = ArrayList<ConnectedDevice>()
-        val regex = Regex("([0-9A-Fa-f:]{17})")
-        regex.findAll(body).forEach { m ->
-            list.add(ConnectedDevice(name = "ZTE Device", ip = "Unknown", mac = formatMac(m.groupValues[1])))
-        }
-        ok(list)
+        return@io fail(
+            "ZTE device-list endpoints did not return a recognizable device table. " +
+                failures.joinToString(" | ").take(500)
+        )
     }
 
     override suspend fun getNetworkInfo(): RouterResult<NetworkInfo> = io {
@@ -235,7 +253,7 @@ class ZteApi(
     }
 
     override suspend fun getRouterInfo(): RouterResult<RouterInfo> = io {
-        ok(RouterInfo(vendor = "ZTE", model = "ZXHN H188A", firmware = "Unknown"))
+        ok(RouterInfo(vendor = "ZTE", model = "Unknown", firmware = "Unknown"))
     }
 
     override suspend fun changeSsid(ssid: String, band: String?): RouterResult<Unit> = notSupported("Change SSID")
