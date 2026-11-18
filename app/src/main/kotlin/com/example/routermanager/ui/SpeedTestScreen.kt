@@ -47,6 +47,14 @@ fun SpeedTestScreen(
     val purple = Color(0xFF9C27B0)
     val green = Color(0xFF00FF00)
     val darkBg = Color(0xFF050510)
+    val latencyLabel = when {
+        state.ping < 0L -> "غير متاح"
+        state.ping <= 50L -> "ممتاز"
+        state.ping <= 100L -> "جيد"
+        state.ping <= 200L -> "متوسط"
+        else -> "مرتفع"
+    }
+    val latencyColor = if (state.ping in 0L..50L) green else cyan
 
     Box(modifier = Modifier.fillMaxSize().background(darkBg)) {
         
@@ -94,9 +102,9 @@ fun SpeedTestScreen(
                 
                 // --- العمود الأيسر (معلومات الاتصال) ---
                 Column(modifier = Modifier.weight(0.25f), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                    InfoBox("حالة الاتصال", "متصل", green, cyan)
-                    InfoBox("الخادم", "القاهرة\n🇪🇬", cyan, cyan)
-                    InfoBox("الجودة", "ممتاز\n⭐⭐⭐⭐⭐", green, cyan)
+                    InfoBox("حالة الاختبار", if (state.isTesting) "جارٍ القياس" else "جاهز", green, cyan)
+                    InfoBox("خادم القياس", "Cloudflare", cyan, cyan)
+                    InfoBox("زمن HTTPS", latencyLabel, latencyColor, cyan)
                 }
 
                 // --- العمود الأوسط (العداد) ---
@@ -123,8 +131,20 @@ fun SpeedTestScreen(
             ) {
                 MiniBox("زمن الاستجابة", "${if (state.ping > 0) state.ping else "--"} ms", green, Modifier.weight(1f))
                 MiniBox("تذبذب الاتصال", "${if (state.jitter > 0) state.jitter else "--"} ms", cyan, Modifier.weight(1f))
-                MiniBox("فقدان الحزم", "${state.packetLoss} %", cyan, Modifier.weight(1f))
+                MiniBox(
+                    "فقدان الحزم",
+                    if (state.packetLoss >= 0.0) String.format("%.1f %%", state.packetLoss) else "--",
+                    cyan,
+                    Modifier.weight(1f)
+                )
             }
+
+            Text(
+                "القياس عبر Cloudflare. زمن الاستجابة هنا هو زمن طلب HTTPS وليس Ping عبر ICMP، وفقدان الحزم غير مقاس.",
+                color = Color.Gray,
+                fontSize = 10.sp,
+                modifier = Modifier.fillMaxWidth().padding(top = 10.dp, start = 4.dp, end = 4.dp)
+            )
 
             Spacer(modifier = Modifier.weight(1f))
 
@@ -208,7 +228,7 @@ fun SpeedGauge(state: SpeedTestState, cyan: Color, pink: Color) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text("سرعة التحميل", color = Color.White, fontSize = 14.sp)
             Text(
-                text = String.format("%.1f", state.currentSpeed),
+                text = if (state.currentSpeed >= 0.0 && state.currentSpeed.isFinite()) String.format("%.1f", state.currentSpeed) else "--",
                 color = Color.White,
                 fontSize = 48.sp,
                 fontWeight = FontWeight.ExtraBold
@@ -246,7 +266,7 @@ fun SpeedBox(title: String, speed: Double, color: Color, icon: androidx.compose.
         Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
             Icon(icon, null, tint = color, modifier = Modifier.size(20.dp))
             Text(title, color = Color.Gray, fontSize = 10.sp)
-            Text(String.format("%.1f", speed), color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+            Text(if (speed >= 0.0 && speed.isFinite()) String.format("%.1f", speed) else "--", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
             Text("Mbps", color = color, fontSize = 10.sp)
         }
     }
