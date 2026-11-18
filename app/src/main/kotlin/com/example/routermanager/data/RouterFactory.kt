@@ -59,7 +59,6 @@ class RouterFactory(private val context: Context) {
             "zte corporation" to 95,
             "getpage.gch" to 90,
             "_sessiontmptoken" to 90,
-            "login_token" to 80
         )),
         VendorFingerprint("Huawei", listOf(
             "echolife" to 100,
@@ -152,6 +151,8 @@ class RouterFactory(private val context: Context) {
                     .build()
 
                 probeClient.newCall(request).execute().use { response ->
+                    // Do not identify a vendor from a generic 3xx/404/error template.
+                    if (response.code !in setOf(200, 401, 403)) return@use
                     val server = response.header("Server").orEmpty()
                     val poweredBy = response.header("X-Powered-By").orEmpty()
                     val auth = response.header("WWW-Authenticate").orEmpty()
