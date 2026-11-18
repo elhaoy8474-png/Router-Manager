@@ -46,7 +46,7 @@ dependencies {
     implementation("androidx.compose.foundation:foundation:1.11.2")
     implementation("androidx.compose.material3:material3:1.4.0")
     implementation("androidx.compose.ui:ui-tooling-preview:1.11.2")
-    implementation("com.squareup.okhttp3:okhttp:5.5.1")
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("org.jsoup:jsoup:1.24.1")
     implementation("androidx.security:security-crypto:1.1.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
@@ -64,6 +64,5 @@ dependencies {
     implementation("com.valentinilk.shimmer:compose-shimmer:1.2.0")
     implementation("androidx.webkit:webkit:1.13.0")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.8.1")
-    implementation("com.github.bumptech.glide:glide:5.0.9")
     implementation("androidx.databinding:viewbinding:8.7.3")
 }
