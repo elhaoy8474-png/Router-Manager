@@ -197,6 +197,22 @@ fun LoginScreen(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Checkbox(
+                    checked = state.allowInsecureHttp,
+                    onCheckedChange = vm::onAllowInsecureHttpChange,
+                    colors = CheckboxDefaults.colors(checkedColor = neonCyan)
+                )
+                Text(
+                    text = "أوافق على استخدام HTTP غير المشفّر عند الحاجة",
+                    color = Color(0xFFFFC857),
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Checkbox(
                     checked = state.rememberMe,
                     onCheckedChange = vm::onRememberChange,
                     colors = CheckboxDefaults.colors(checkedColor = neonCyan)
